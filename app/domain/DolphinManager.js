@@ -66,7 +66,10 @@ export default class DolphinManager {
     try {
       fs.removeSync(targetPath);
       fs.copySync(originalDolphinPath, targetPath);
-      log.info("Dolphin was reset");
+      if (process.platform === "linux") {
+        const linuxUserDir = path.join(os.homedir(),".config", "SlippiPlayback");
+        fs.removeSync(linuxUserDir); // clear the User dir on linux
+      }
       isCopySuccess = true;
     } catch (err) {
       log.error("Failed to reset Dolphin, will try again with elevated permissions");
@@ -78,10 +81,9 @@ export default class DolphinManager {
         // TODO: ipc to trigger it in the main process? But I'm too lazy right now
         await sudoRemovePath(targetPath);
         fs.copySync(originalDolphinPath, targetPath);
-        log.info("Dolphin was reset");
         isCopySuccess = true;
       } catch (err) {
-        log.error("Failed to reset Dolphin, will try again with elevated permissions");
+        log.error("Failed to reset Dolphin with elevated permissions");
         log.error(err);
         throw new Error("Failed to reset Dolphin. You may need to reinstall the desktop app.");
       }
@@ -110,12 +112,21 @@ export default class DolphinManager {
     }
     try {
       const iniPath = path.join(dolphinPath, "Config", "Dolphin.ini");
-      const dolphinINI = ini.parse(fs.readFileSync(iniPath, 'utf-8'));
-      dolphinINI.General.ISOPath0 = fileDir;
-      const numPaths = dolphinINI.General.ISOPaths;
-      dolphinINI.General.ISOPaths = numPaths !== "0" ? numPaths : "1";
-      const newINI = ini.encode(dolphinINI);
-      fs.writeFileSync(iniPath, newINI);
+      if (fs.existsSync(iniPath)){
+        const dolphinINI = ini.parse(fs.readFileSync(iniPath, 'utf-8'));
+        dolphinINI.General.ISOPath0 = fileDir;
+        const numPaths = dolphinINI.General.ISOPaths;
+        dolphinINI.General.ISOPaths = numPaths !== "0" ? numPaths : "1";
+        const newINI = ini.encode(dolphinINI);
+        fs.writeFileSync(iniPath, newINI);
+      } else {
+        log.info("There isn't a User dir to write to.");
+        const configPath = path.join(dolphinPath, "Config");
+        const newINI = ini.encode({"General": {"ISOPath0": fileDir, "ISOPaths": 1}});
+        log.info("attempting to mkdir -p");
+        fs.mkdirpSync(configPath);
+        fs.writeFileSync(iniPath, newINI);
+      }
     } catch (err) {
       log.warn(`Failed to update the dolphin paths\n${err}`);
       throw err;
